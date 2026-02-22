@@ -1,0 +1,19 @@
+# Jupyter
+.ipynb_checkpoints/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Data (do not push raw dataset)
+data/raw/
+
+# Large files
+*.zip
+*.parquet
+
+# OS
+.DS_Store
+Thumbs.db
