@@ -1,0 +1,4 @@
+-r requirements.txt
+streamlit>=1.28
+plotly>=5.24
+requests>=2.32
