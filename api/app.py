@@ -42,6 +42,12 @@ def root():
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Hybrid NIDS Test Console</title>
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+    crossorigin=""
+  />
   <style>
     :root {{
       --bg: #081120;
@@ -295,26 +301,25 @@ def root():
       overflow: hidden;
       border: 1px solid rgba(255, 255, 255, 0.08);
       border-radius: 18px;
-      background:
-        radial-gradient(circle at 20% 30%, rgba(75, 208, 255, 0.14), transparent 22%),
-        radial-gradient(circle at 70% 60%, rgba(126, 255, 178, 0.12), transparent 20%),
-        linear-gradient(180deg, rgba(9, 21, 38, 0.98), rgba(6, 16, 28, 0.98));
-      min-height: 320px;
+      min-height: 360px;
     }}
-    .map-grid {{
-      position: absolute;
-      inset: 0;
-      background-image:
-        linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px);
-      background-size: 56px 56px;
-      opacity: 0.3;
-    }}
-    .map-svg {{
-      position: relative;
+    #attackMap {{
       width: 100%;
-      height: 320px;
-      display: block;
+      height: 360px;
+    }}
+    .leaflet-container {{
+      background: linear-gradient(180deg, rgba(9, 21, 38, 0.98), rgba(6, 16, 28, 0.98));
+      font-family: inherit;
+    }}
+    .attack-marker {{
+      width: 14px;
+      height: 14px;
+      border-radius: 999px;
+      border: 2px solid rgba(255,255,255,0.85);
+      box-shadow: 0 0 0 6px rgba(255,255,255,0.08);
+    }}
+    .attack-popup {{
+      color: #111827;
     }}
     .map-legend {{
       display: flex;
@@ -479,10 +484,7 @@ def root():
     <section class="card" style="margin-top:20px">
       <h2>Detected Attack Regions</h2>
       <div class="map-shell">
-        <div class="map-grid"></div>
-        <svg id="attackMap" class="map-svg" viewBox="0 0 1000 320" preserveAspectRatio="none" aria-label="Detected attacks region map">
-          <text x="50%" y="50%" text-anchor="middle" fill="#9fb3d1" font-size="20">Run a prediction to render attack regions.</text>
-        </svg>
+        <div id="attackMap" aria-label="Detected attacks region map"></div>
       </div>
       <div class="map-legend">
         <span><span class="legend-dot" style="background:#ff6d7a"></span>High severity</span>
@@ -497,6 +499,11 @@ def root():
     </section>
   </div>
 
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin=""
+  ></script>
   <script>
     const fileInput = document.getElementById("fileInput");
     const weightSlider = document.getElementById("weightSlider");
@@ -519,6 +526,8 @@ def root():
     let currentCsvText = "";
     let currentRows = [];
     let currentResults = [];
+    let liveMap = null;
+    let liveMapLayer = null;
 
     function updateWeights() {{
       const xgb = Number(weightSlider.value);
@@ -586,10 +595,32 @@ def root():
       return {{ lat, lon }};
     }}
 
+    function ensureMap() {{
+      if (liveMap || typeof L === "undefined") {{
+        return;
+      }}
+      liveMap = L.map("attackMap", {{
+        zoomControl: true,
+        scrollWheelZoom: true,
+      }}).setView([18, 10], 2);
+
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {{
+        maxZoom: 18,
+        attribution: "&copy; OpenStreetMap contributors"
+      }}).addTo(liveMap);
+
+      liveMapLayer = L.layerGroup().addTo(liveMap);
+    }}
+
     function renderAttackMap(rows, results) {{
+      ensureMap();
       const activeResults = Array.isArray(results) ? results : [];
+      if (!liveMap || !liveMapLayer) {{
+        return;
+      }}
+      liveMapLayer.clearLayers();
       if (!activeResults.length) {{
-        attackMap.innerHTML = '<text x="50%" y="50%" text-anchor="middle" fill="#9fb3d1" font-size="20">Run a prediction to render attack regions.</text>';
+        liveMap.setView([18, 10], 2);
         return;
       }}
 
@@ -602,43 +633,40 @@ def root():
 
       const points = activeResults.map((item, index) => {{
         const row = rows[index] || rows[0] || {{}};
-        const regionKey = row.src_ip || row.Source_IP || row.Src_IP || row.Destination_IP || row.Dst_IP || `flow-${{index}}`;
+        const regionKey = row.src_ip || row.Source_IP || row.Src_IP || row.Destination_IP || row.Dst_IP || row.dst_ip || `flow-${{index}}`;
         const geo = fakeGeo(regionKey);
-        const x = ((geo.lon + 180) / 360) * 1000;
-        const y = ((90 - (geo.lat + 30)) / 180) * 320;
         return {{
-          x: Math.max(24, Math.min(976, x)),
-          y: Math.max(24, Math.min(296, y)),
+          lat: geo.lat,
+          lon: geo.lon,
           color: severityColor[item.severity] || "#7effb2",
           label: item.prediction || "Unknown",
           severity: item.severity || "Safe",
+          confidence: Number(item.confidence || 0).toFixed(3),
+          regionKey,
         }};
       }});
 
-      const circles = points.map((point) => `
-        <g>
-          <circle cx="${{point.x}}" cy="${{point.y}}" r="7" fill="${{point.color}}" fill-opacity="0.88" stroke="rgba(255,255,255,0.7)" stroke-width="1.5" />
-          <title>${{escapeHtml(point.label)}} | ${{escapeHtml(point.severity)}}</title>
-        </g>
-      `).join("");
+      const bounds = [];
+      points.forEach((point) => {{
+        const marker = L.circleMarker([point.lat, point.lon], {{
+          radius: point.severity === "High" ? 9 : 7,
+          color: "rgba(255,255,255,0.85)",
+          weight: 1.5,
+          fillColor: point.color,
+          fillOpacity: 0.88,
+        }});
+        marker.bindPopup(
+          `<div class="attack-popup"><strong>${{escapeHtml(point.label)}}</strong><br/>Severity: ${{escapeHtml(point.severity)}}<br/>Confidence: ${{point.confidence}}<br/>Key: ${{escapeHtml(point.regionKey)}}</div>`
+        );
+        marker.addTo(liveMapLayer);
+        bounds.push([point.lat, point.lon]);
+      }});
 
-      attackMap.innerHTML = `
-        <defs>
-          <filter id="glow">
-            <feGaussianBlur stdDeviation="3.5" result="coloredBlur"></feGaussianBlur>
-            <feMerge>
-              <feMergeNode in="coloredBlur"></feMergeNode>
-              <feMergeNode in="SourceGraphic"></feMergeNode>
-            </feMerge>
-          </filter>
-        </defs>
-        <g opacity="0.18" fill="#7eb9ff">
-          <path d="M78,92 C124,56 200,40 271,57 C311,66 364,69 416,58 C469,47 553,47 605,72 C660,98 752,92 813,117 C872,141 928,189 916,226 C907,254 845,280 783,277 C727,274 678,240 617,230 C569,222 535,232 493,249 C443,270 364,284 295,271 C232,259 182,233 135,203 C93,176 56,129 78,92Z"></path>
-          <path d="M682,72 C724,53 780,52 823,68 C861,82 899,118 905,151 C909,176 895,205 869,218 C836,235 785,224 749,210 C714,197 680,179 664,148 C650,121 651,91 682,72Z"></path>
-          <path d="M217,224 C250,207 303,205 340,221 C372,236 387,267 364,286 C344,302 304,304 269,298 C233,292 191,273 186,248 C182,238 193,229 217,224Z"></path>
-        </g>
-        <g filter="url(#glow)">${{circles}}</g>
-      `;
+      if (bounds.length === 1) {{
+        liveMap.setView(bounds[0], 4);
+      }} else {{
+        liveMap.fitBounds(bounds, {{ padding: [30, 30] }});
+      }}
     }}
 
     function downloadResultsCsv() {{
@@ -857,6 +885,7 @@ def root():
       await sendTextAsFile("/batch_predict", text, "sample_input2.csv");
     }});
     updateWeights();
+    ensureMap();
     resetOutputPlaceholder();
     window.addEventListener("load", async () => {{
       try {{
