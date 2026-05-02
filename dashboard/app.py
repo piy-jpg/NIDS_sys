@@ -1,3 +1,5 @@
+# dashboard/app.py
+
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -5,249 +7,209 @@ import numpy as np
 import requests
 import io
 import time
+import json
+import hashlib
+import random
 
-API_URL = "http://127.0.0.1:8000"
+st.set_page_config(page_title="Hybrid NIDS Dashboard", layout="wide")
 
-# ----------------------------
-# PAGE CONFIG
-# ----------------------------
-st.set_page_config(
-    page_title="Hybrid NIDS Enterprise Dashboard",
-    layout="wide"
-)
-
-# ----------------------------
-# CUSTOM STYLING
-# ----------------------------
 st.markdown("""
 <style>
-.block-container { padding-top: 1.5rem; }
-.metric-box {
-    background-color:#111827;
-    padding:15px;
-    border-radius:12px;
-    text-align:center;
-}
-.metric-label {
-    font-size:13px;
-    color:#9ca3af;
-}
-.metric-value {
-    font-size:26px;
-    font-weight:600;
-}
-.alert-banner {
-    background-color:#7f1d1d;
-    color:white;
-    padding:10px;
-    border-radius:8px;
-    text-align:center;
-    font-weight:600;
-}
+.block-container { padding-top: 1.2rem; }
+.metric-box { background-color:#111827; padding:15px; border-radius:12px; text-align:center; }
+.metric-label { font-size:13px; color:#9ca3af; }
+.metric-value { font-size:24px; font-weight:600; }
+.alert-banner { background-color:#7f1d1d; color:white; padding:10px; border-radius:8px; text-align:center; font-weight:bold; }
 </style>
 """, unsafe_allow_html=True)
 
 st.title("🔐 Hybrid Network Intrusion Detection System")
-st.caption("Enterprise Cyber Threat Monitoring Interface")
+st.caption("Real-Time Cyber Threat Monitoring Dashboard")
 
-# ----------------------------
-# SESSION STATE
-# ----------------------------
-if "live_mode" not in st.session_state:
-    st.session_state.live_mode = False
+# ===============================
+# Sidebar Configuration
+# ===============================
 
-# ----------------------------
-# FILE UPLOAD
-# ----------------------------
-uploaded_file = st.sidebar.file_uploader(
-    "Upload Network Traffic CSV",
-    type=["csv"]
-)
+API_URL = st.sidebar.text_input("API URL", value="http://127.0.0.1:8000")
 
+st.sidebar.markdown("### ⚙ Fusion Control")
+
+xgb_weight = st.sidebar.slider("XGBoost Weight", 0.0, 1.0, 0.7)
+dnn_weight = 1.0 - xgb_weight
+
+if st.sidebar.button("Apply Fusion Weights"):
+    try:
+        resp = requests.post(f"{API_URL}/set_weights", json={
+            "xgb_weight": xgb_weight,
+            "dnn_weight": dnn_weight
+        })
+        if resp.status_code == 200:
+            st.sidebar.success("Fusion weights updated")
+        else:
+            st.sidebar.error("Failed to update weights")
+    except:
+        st.sidebar.error("Backend not reachable")
+
+st.sidebar.markdown("---")
+
+uploaded_file = st.sidebar.file_uploader("Upload Network Traffic CSV", type=["csv"])
 if uploaded_file is None:
     st.info("Upload a CSV file to begin monitoring.")
     st.stop()
 
-# ----------------------------
-# FETCH PREDICTIONS
-# ----------------------------
+# ===============================
+# Load & Preview CSV
+# ===============================
+
+try:
+    raw_df = pd.read_csv(io.StringIO(uploaded_file.getvalue().decode("utf-8")))
+except Exception as e:
+    st.error(f"CSV Error: {e}")
+    st.stop()
+
+st.subheader("Uploaded Data Preview")
+st.write(raw_df.head())
+
+# ===============================
+# Fetch Predictions
+# ===============================
+
 def fetch_predictions(file_bytes):
-    files = {"file": file_bytes}
+    files = {"file": ("data.csv", file_bytes, "text/csv")}
     response = requests.post(f"{API_URL}/batch_predict", files=files)
     if response.status_code != 200:
-        raise Exception(response.json().get("error", "API Error"))
+        raise RuntimeError(response.json().get("error"))
     return response.json()
 
 try:
-    api_data = fetch_predictions(uploaded_file.getvalue())
-    results = pd.DataFrame(api_data["results"])
-
-    raw_df = pd.read_csv(io.StringIO(uploaded_file.getvalue().decode("utf-8")))
-
-    if "timestamp" in raw_df.columns:
-        results["timestamp"] = pd.to_datetime(raw_df["timestamp"])
-    else:
-        results["row_index"] = np.arange(len(results))
-
+    with st.spinner("Running Hybrid Detection Engine..."):
+        api_data = fetch_predictions(uploaded_file.getvalue())
+        results = pd.DataFrame(api_data["results"])
+        total_flows = api_data["total_flows"]
 except Exception as e:
-    st.error(f"Error: {e}")
+    st.error(f"Prediction failed: {e}")
     st.stop()
 
-# ----------------------------
-# SIDEBAR CONTROLS
-# ----------------------------
-st.sidebar.markdown("### Filters")
+# ===============================
+# High Severity Flash Banner
+# ===============================
 
-attack_filter = st.sidebar.multiselect(
-    "Attack Type",
-    sorted(results["prediction"].unique()),
-    default=sorted(results["prediction"].unique())
-)
+if "High" in results["severity"].values:
+    st.markdown(
+        "<div class='alert-banner'>🚨 HIGH SEVERITY ATTACK DETECTED</div>",
+        unsafe_allow_html=True
+    )
 
-severity_filter = st.sidebar.multiselect(
-    "Severity",
-    sorted(results["severity"].unique()),
-    default=sorted(results["severity"].unique())
-)
+# ===============================
+# Risk Score Meter
+# ===============================
 
-conf_range = st.sidebar.slider(
-    "Confidence Range",
-    0.0, 1.0,
-    (0.0, 1.0),
-    step=0.01
-)
+attack_count = len(results[results["prediction"] != "Benign"])
+risk_score = int((attack_count / len(results)) * 100)
 
-# Start / Stop Monitoring
-if st.sidebar.button("▶ Start Monitoring"):
-    st.session_state.live_mode = True
+st.markdown("### 🧠 Network Risk Level")
+st.progress(risk_score / 100)
 
-if st.sidebar.button("⏹ Stop Monitoring"):
-    st.session_state.live_mode = False
+if risk_score > 60:
+    st.error(f"High Risk Environment ({risk_score}/100)")
+elif risk_score > 30:
+    st.warning(f"Moderate Risk ({risk_score}/100)")
+else:
+    st.success(f"Stable Network ({risk_score}/100)")
 
-# ----------------------------
-# APPLY FILTERS
-# ----------------------------
-df_view = results.copy()
-df_view = df_view[df_view["prediction"].isin(attack_filter)]
-df_view = df_view[df_view["severity"].isin(severity_filter)]
-df_view = df_view[
-    (df_view["confidence"] >= conf_range[0]) &
-    (df_view["confidence"] <= conf_range[1])
-]
+# ===============================
+# Metrics
+# ===============================
 
-# ----------------------------
-# ALERT BANNER
-# ----------------------------
-if st.session_state.live_mode:
-    new_attacks = len(df_view[df_view["prediction"] != "Benign"])
-    if new_attacks > 0:
-        st.markdown(
-            f"<div class='alert-banner'>⚠ {new_attacks} Potential Threats Detected</div>",
-            unsafe_allow_html=True
-        )
-
-# ----------------------------
-# METRICS ROW
-# ----------------------------
 col1, col2, col3, col4 = st.columns(4)
 
-def metric(column, label, value):
-    with column:
-        st.markdown(
-            f"""
-            <div class="metric-box">
-                <div class="metric-label">{label}</div>
-                <div class="metric-value">{value}</div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+def metric(col, label, value):
+    with col:
+        st.markdown(f"<div class='metric-box'><div class='metric-label'>{label}</div><div class='metric-value'>{value}</div></div>", unsafe_allow_html=True)
 
-metric(col1, "Total Flows", len(results))
-metric(col2, "Filtered Flows", len(df_view))
-metric(col3, "Detected Attacks", len(results[results["prediction"] != "Benign"]))
-metric(col4, "Benign Traffic", len(results[results["prediction"] == "Benign"]))
+metric(col1, "Total Flows", total_flows)
+metric(col2, "Detected Attacks", attack_count)
+metric(col3, "Benign Traffic", len(results[results["prediction"] == "Benign"]))
+metric(col4, "Avg Confidence", round(results["confidence"].mean(), 3))
 
 st.markdown("---")
 
-# ----------------------------
-# ROW 1
-# ----------------------------
+# ===============================
+# Charts
+# ===============================
+
 left, right = st.columns(2)
 
 with left:
-    attack_counts = df_view["prediction"].value_counts().reset_index()
+    attack_counts = results["prediction"].value_counts().reset_index()
     attack_counts.columns = ["Attack", "Count"]
-
-    if not attack_counts.empty:
-        fig_pie = px.pie(
-            attack_counts,
-            names="Attack",
-            values="Count",
-            hole=0.5
-        )
-        fig_pie.update_layout(height=340, margin=dict(t=10, b=10))
-        st.plotly_chart(fig_pie, width="stretch")
+    fig_pie = px.pie(attack_counts, names="Attack", values="Count", hole=0.5)
+    st.plotly_chart(fig_pie, use_container_width=True)
 
 with right:
-    severity_counts = df_view["severity"].value_counts().reset_index()
-    severity_counts.columns = ["Severity", "Count"]
-
-    if not severity_counts.empty:
-        fig_bar = px.bar(
-            severity_counts,
-            x="Severity",
-            y="Count",
-            color="Severity"
-        )
-        fig_bar.update_layout(height=340, margin=dict(t=10, b=10))
-        st.plotly_chart(fig_bar, width="stretch")
+    fig_conf = px.histogram(results, x="confidence", nbins=20)
+    st.plotly_chart(fig_conf, use_container_width=True)
 
 st.markdown("---")
 
-# ----------------------------
-# ROW 2
-# ----------------------------
-colA, colB = st.columns(2)
+# ===============================
+# Live Threat Feed
+# ===============================
 
-with colA:
-    if not df_view.empty:
-        fig_conf = px.histogram(df_view, x="confidence", nbins=20)
-        fig_conf.update_layout(height=300, margin=dict(t=10, b=10))
-        st.plotly_chart(fig_conf, width="stretch")
+st.markdown("### 🔴 Live Threat Feed")
 
-with colB:
-    if not df_view.empty:
-        timeline_df = df_view.copy()
+for _, row in results.tail(10).iterrows():
+    emoji = {
+        "High": "🚨",
+        "Medium": "⚠",
+        "Low": "🔎",
+        "Safe": "✅"
+    }.get(row["severity"], "❓")
 
-        if "timestamp" in timeline_df.columns:
-            fig_time = px.line(timeline_df, x="timestamp", y="confidence")
-        else:
-            if "row_index" not in timeline_df.columns:
-                timeline_df["row_index"] = np.arange(len(timeline_df))
-            fig_time = px.scatter(timeline_df, x="row_index", y="confidence")
-
-        fig_time.update_layout(height=300, margin=dict(t=10, b=10))
-        st.plotly_chart(fig_time, width="stretch")
+    st.write(f"{emoji} {row['prediction']} | Confidence: {row['confidence']:.3f}")
 
 st.markdown("---")
 
-# ----------------------------
-# TABLE
-# ----------------------------
-st.subheader("Detailed Results")
-st.dataframe(df_view, height=300)
+# ===============================
+# Simulated Attack Geo Map
+# ===============================
+
+def fake_geo(value):
+    h = int(hashlib.md5(str(value).encode()).hexdigest(), 16)
+    random.seed(h)
+    return random.uniform(-60, 60), random.uniform(-180, 180)
+
+st.markdown("### 🌍 Attack Distribution Map")
+
+geo_data = []
+
+if "src_ip" in raw_df.columns:
+    for ip in raw_df["src_ip"].astype(str):
+        lat, lon = fake_geo(ip)
+        geo_data.append((lat, lon))
+else:
+    for idx in range(len(results)):
+        lat, lon = fake_geo(idx)
+        geo_data.append((lat, lon))
+
+geo_df = pd.DataFrame(geo_data, columns=["lat", "lon"])
+st.map(geo_df)
+
+st.markdown("---")
+
+# ===============================
+# Detailed Results
+# ===============================
+
+st.subheader("Detailed Detection Results")
+st.dataframe(results, height=300)
 
 st.download_button(
-    "Download Filtered Results",
-    data=df_view.to_csv(index=False).encode("utf-8"),
-    file_name="nids_filtered_results.csv",
+    "Download Results CSV",
+    data=results.to_csv(index=False).encode("utf-8"),
+    file_name="nids_results.csv",
     mime="text/csv"
 )
 
-# ----------------------------
-# LIVE SIMULATION LOOP
-# ----------------------------
-if st.session_state.live_mode:
-    time.sleep(2)
-    st.rerun()
+if st.checkbox("Show Raw API JSON"):
+    st.code(json.dumps(api_data, indent=2), language="json")
