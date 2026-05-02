@@ -52,6 +52,8 @@ def root():
       --accent: #4bd0ff;
       --accent-2: #7effb2;
       --danger: #ff6d7a;
+      --warn: #ffd166;
+      --safe: #7effb2;
     }}
     * {{ box-sizing: border-box; }}
     body {{
@@ -94,7 +96,7 @@ def root():
     .grid {{
       display: grid;
       gap: 20px;
-      grid-template-columns: 1.3fr 0.9fr;
+      grid-template-columns: 1.2fr 0.8fr;
     }}
     .card {{
       background: var(--panel);
@@ -118,7 +120,7 @@ def root():
     }}
     .stats {{
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-columns: repeat(4, minmax(0, 1fr));
       gap: 14px;
       margin-top: 16px;
     }}
@@ -138,6 +140,20 @@ def root():
       margin-top: 10px;
       font-size: 28px;
       font-weight: 700;
+    }}
+    .label {{
+      display: block;
+      color: var(--muted);
+      font-size: 13px;
+      margin: 0 0 8px;
+    }}
+    .range-wrap {{
+      display: grid;
+      gap: 10px;
+      margin-top: 16px;
+    }}
+    input[type="range"] {{
+      width: 100%;
     }}
     .actions {{
       display: flex;
@@ -171,6 +187,30 @@ def root():
       margin: 14px 0 18px;
       color: var(--muted);
     }}
+    table {{
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }}
+    th, td {{
+      padding: 10px 12px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      text-align: left;
+      vertical-align: top;
+    }}
+    th {{
+      color: #bfe3ff;
+      font-weight: 600;
+      position: sticky;
+      top: 0;
+      background: rgba(9, 21, 38, 0.96);
+    }}
+    .table-wrap {{
+      overflow: auto;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 18px;
+      max-height: 320px;
+    }}
     .meta {{
       display: grid;
       gap: 12px;
@@ -193,11 +233,72 @@ def root():
       color: var(--muted);
       min-height: 20px;
     }}
+    .banner {{
+      display: none;
+      margin-top: 18px;
+      padding: 14px 16px;
+      border-radius: 16px;
+      font-weight: 700;
+      background: rgba(255, 109, 122, 0.14);
+      color: #ffc6cd;
+      border: 1px solid rgba(255, 109, 122, 0.24);
+    }}
+    .banner.show {{
+      display: block;
+    }}
+    .progress {{
+      width: 100%;
+      height: 14px;
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 999px;
+      overflow: hidden;
+      margin-top: 10px;
+    }}
+    .progress-bar {{
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, var(--accent), var(--warn), var(--danger));
+      transition: width 0.25s ease;
+    }}
+    .risk-text {{
+      margin-top: 10px;
+      font-weight: 600;
+    }}
+    .list {{
+      display: grid;
+      gap: 10px;
+    }}
+    .feed-item, .bar-item {{
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 14px;
+      padding: 12px 14px;
+      background: rgba(255, 255, 255, 0.03);
+    }}
+    .bar-line {{
+      margin-top: 8px;
+      height: 10px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.08);
+      overflow: hidden;
+    }}
+    .bar-fill {{
+      height: 100%;
+      background: linear-gradient(90deg, #58a6ff, #4bd0ff);
+    }}
+    .split {{
+      display: grid;
+      gap: 20px;
+      grid-template-columns: 1fr 1fr;
+    }}
+    .muted {{
+      color: var(--muted);
+    }}
     .danger {{ color: var(--danger); }}
     .ok {{ color: var(--accent-2); }}
     @media (max-width: 900px) {{
       .grid {{ grid-template-columns: 1fr; }}
       .stats {{ grid-template-columns: 1fr; }}
+      .split {{ grid-template-columns: 1fr; }}
     }}
   </style>
 </head>
@@ -205,7 +306,7 @@ def root():
   <div class="wrap">
     <section class="hero">
       <div class="eyebrow">Vercel Frontend + Backend</div>
-      <h1>Hybrid NIDS Test Console</h1>
+      <h1>Hybrid NIDS Dashboard</h1>
       <div class="sub">
         Upload a network-flow CSV and test the live backend directly from this Vercel-hosted frontend. This deployment is currently running in <strong>{mode}</strong>.
       </div>
@@ -214,19 +315,26 @@ def root():
 
     <section class="grid">
       <div class="card">
-        <h2>Frontend Test Panel</h2>
+        <h2>Control Panel</h2>
         <div class="meta">
           <div>Select a CSV with one row for single prediction or multiple rows for batch analysis.</div>
-          <div>Need test data? Download the built-in demo file below.</div>
+          <div>Need test data? Download the built-in sample files below.</div>
         </div>
         <input id="fileInput" type="file" accept=".csv" />
+        <div class="range-wrap">
+          <label class="label" for="weightSlider">XGBoost Weight: <strong id="xgbWeight">0.70</strong> | DNN Weight: <strong id="dnnWeight">0.30</strong></label>
+          <input id="weightSlider" type="range" min="0" max="1" step="0.1" value="0.7" />
+        </div>
         <div class="actions">
+          <button class="secondary" id="weightsBtn">Apply Fusion Weights</button>
           <button class="primary" id="singleBtn">Run Single Prediction</button>
           <button class="secondary" id="batchBtn">Run Batch Prediction</button>
-          <a class="link-btn secondary" href="/sample-csv">Download Sample CSV</a>
+          <a class="link-btn secondary" href="/sample-csv">Sample CSV</a>
+          <a class="link-btn secondary" href="/sample-csv-large">Sample CSV 2</a>
           <a class="link-btn secondary" href="/health">Check Health</a>
         </div>
         <div class="status" id="status">Ready for testing.</div>
+        <div class="banner" id="banner">High severity attack detected.</div>
       </div>
 
       <div class="card">
@@ -244,33 +352,246 @@ def root():
             <div class="stat-label">Backend</div>
             <div class="stat-value">Live</div>
           </div>
+          <div class="stat">
+            <div class="stat-label">API URL</div>
+            <div class="stat-value" style="font-size:18px">Same origin</div>
+          </div>
         </div>
       </div>
     </section>
 
     <section class="card" style="margin-top:20px">
-      <h2>Response</h2>
+      <h2>Uploaded Data Preview</h2>
+      <div class="table-wrap">
+        <table id="previewTable">
+          <thead><tr><th>Preview</th></tr></thead>
+          <tbody><tr><td class="muted">Upload a CSV to preview the first rows.</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card" style="margin-top:20px">
+      <h2>Network Risk Level</h2>
+      <div class="progress"><div class="progress-bar" id="riskBar"></div></div>
+      <div class="risk-text" id="riskText">Run batch prediction to calculate the current risk score.</div>
+    </section>
+
+    <section class="card" style="margin-top:20px">
+      <h2>Metrics</h2>
+      <div class="stats">
+        <div class="stat">
+          <div class="stat-label">Total Flows</div>
+          <div class="stat-value" id="metricFlows">0</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Detected Attacks</div>
+          <div class="stat-value" id="metricAttacks">0</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Benign Traffic</div>
+          <div class="stat-value" id="metricBenign">0</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Avg Confidence</div>
+          <div class="stat-value" id="metricConfidence">0.000</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="split" style="margin-top:20px">
+      <section class="card">
+        <h2>Attack Distribution</h2>
+        <div class="list" id="attackBreakdown">
+          <div class="bar-item muted">Run a prediction to see attack counts.</div>
+        </div>
+      </section>
+      <section class="card">
+        <h2>Live Threat Feed</h2>
+        <div class="list" id="threatFeed">
+          <div class="feed-item muted">Recent predictions will appear here.</div>
+        </div>
+      </section>
+    </section>
+
+    <section class="card" style="margin-top:20px">
+      <h2>Detailed Detection Results</h2>
+      <div class="table-wrap">
+        <table id="resultsTable">
+          <thead><tr><th>Prediction</th><th>Confidence</th><th>Severity</th><th>Warning</th></tr></thead>
+          <tbody><tr><td colspan="4" class="muted">No predictions yet.</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card" style="margin-top:20px">
+      <h2>Raw API JSON</h2>
       <pre id="output">Upload a CSV and run a test to see the JSON response here.</pre>
     </section>
   </div>
 
   <script>
     const fileInput = document.getElementById("fileInput");
+    const weightSlider = document.getElementById("weightSlider");
+    const xgbWeightEl = document.getElementById("xgbWeight");
+    const dnnWeightEl = document.getElementById("dnnWeight");
     const statusEl = document.getElementById("status");
     const outputEl = document.getElementById("output");
+    const previewTable = document.getElementById("previewTable");
+    const bannerEl = document.getElementById("banner");
+    const riskBar = document.getElementById("riskBar");
+    const riskText = document.getElementById("riskText");
+    const attackBreakdown = document.getElementById("attackBreakdown");
+    const threatFeed = document.getElementById("threatFeed");
+    const resultsTable = document.getElementById("resultsTable");
+    const metricFlows = document.getElementById("metricFlows");
+    const metricAttacks = document.getElementById("metricAttacks");
+    const metricBenign = document.getElementById("metricBenign");
+    const metricConfidence = document.getElementById("metricConfidence");
+
+    function updateWeights() {{
+      const xgb = Number(weightSlider.value);
+      const dnn = 1 - xgb;
+      xgbWeightEl.textContent = xgb.toFixed(2);
+      dnnWeightEl.textContent = dnn.toFixed(2);
+    }}
+
+    function escapeHtml(value) {{
+      return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;");
+    }}
+
+    function parseCsv(text) {{
+      const lines = text.trim().split(/\\r?\\n/).filter(Boolean);
+      if (!lines.length) return [];
+      const headers = lines[0].split(",");
+      return lines.slice(1).map((line) => {{
+        const cols = line.split(",");
+        const row = {{}};
+        headers.forEach((header, index) => {{
+          row[header] = cols[index] ?? "";
+        }});
+        return row;
+      }});
+    }}
+
+    function renderPreview(rows) {{
+      if (!rows.length) {{
+        previewTable.innerHTML = "<thead><tr><th>Preview</th></tr></thead><tbody><tr><td class='muted'>Upload a CSV to preview the first rows.</td></tr></tbody>";
+        return;
+      }}
+      const headers = Object.keys(rows[0]).slice(0, 8);
+      const head = `<thead><tr>${{headers.map((h) => `<th>${{escapeHtml(h)}}</th>`).join("")}}</tr></thead>`;
+      const bodyRows = rows.slice(0, 5).map((row) => `<tr>${{headers.map((h) => `<td>${{escapeHtml(row[h])}}</td>`).join("")}}</tr>`).join("");
+      previewTable.innerHTML = head + `<tbody>${{bodyRows}}</tbody>`;
+    }}
+
+    function setStatus(message, tone = "") {{
+      statusEl.textContent = message;
+      statusEl.className = tone ? `status ${{tone}}` : "status";
+    }}
+
+    function applyDashboardData(apiData) {{
+      const results = Array.isArray(apiData.results) ? apiData.results : [apiData];
+      const totalFlows = apiData.total_flows ?? results.length;
+      const attackCount = results.filter((item) => item.prediction !== "Benign").length;
+      const benignCount = results.filter((item) => item.prediction === "Benign").length;
+      const avgConfidence = results.length ? results.reduce((sum, item) => sum + Number(item.confidence || 0), 0) / results.length : 0;
+      const riskScore = totalFlows ? Math.round((attackCount / totalFlows) * 100) : 0;
+
+      metricFlows.textContent = String(totalFlows);
+      metricAttacks.textContent = String(attackCount);
+      metricBenign.textContent = String(benignCount);
+      metricConfidence.textContent = avgConfidence.toFixed(3);
+
+      riskBar.style.width = `${{riskScore}}%`;
+      if (riskScore > 60) {{
+        riskText.textContent = `High Risk Environment (${{riskScore}}/100)`;
+        riskText.className = "risk-text danger";
+      }} else if (riskScore > 30) {{
+        riskText.textContent = `Moderate Risk (${{riskScore}}/100)`;
+        riskText.className = "risk-text";
+      }} else {{
+        riskText.textContent = `Stable Network (${{riskScore}}/100)`;
+        riskText.className = "risk-text ok";
+      }}
+
+      const hasHigh = results.some((item) => item.severity === "High");
+      bannerEl.className = hasHigh ? "banner show" : "banner";
+
+      const counts = results.reduce((acc, item) => {{
+        const key = item.prediction || "Unknown";
+        acc[key] = (acc[key] || 0) + 1;
+        return acc;
+      }}, {{}});
+      const breakdownHtml = Object.entries(counts)
+        .sort((a, b) => b[1] - a[1])
+        .map(([label, count]) => {{
+          const width = totalFlows ? Math.max(8, Math.round((count / totalFlows) * 100)) : 0;
+          return `<div class="bar-item"><strong>${{escapeHtml(label)}}</strong> <span class="muted">${{count}}</span><div class="bar-line"><div class="bar-fill" style="width:${{width}}%"></div></div></div>`;
+        }})
+        .join("");
+      attackBreakdown.innerHTML = breakdownHtml || '<div class="bar-item muted">No prediction data.</div>';
+
+      const emojiMap = {{
+        High: "🚨",
+        Medium: "⚠",
+        Low: "🔎",
+        Safe: "✅"
+      }};
+      const feedHtml = results.slice(-10).reverse().map((item) => {{
+        const emoji = emojiMap[item.severity] || "❓";
+        return `<div class="feed-item">${{emoji}} <strong>${{escapeHtml(item.prediction || "Unknown")}}</strong> <span class="muted">| Confidence: ${{Number(item.confidence || 0).toFixed(3)}}</span></div>`;
+      }}).join("");
+      threatFeed.innerHTML = feedHtml || '<div class="feed-item muted">Recent predictions will appear here.</div>';
+
+      const resultRows = results.map((item) => `
+        <tr>
+          <td>${{escapeHtml(item.prediction || "")}}</td>
+          <td>${{Number(item.confidence || 0).toFixed(4)}}</td>
+          <td>${{escapeHtml(item.severity || "")}}</td>
+          <td>${{escapeHtml(item.warning || "")}}</td>
+        </tr>
+      `).join("");
+      resultsTable.innerHTML = `
+        <thead><tr><th>Prediction</th><th>Confidence</th><th>Severity</th><th>Warning</th></tr></thead>
+        <tbody>${{resultRows || "<tr><td colspan='4' class='muted'>No predictions yet.</td></tr>"}}</tbody>
+      `;
+    }}
+
+    async function applyWeights() {{
+      updateWeights();
+      const xgb = Number(weightSlider.value);
+      const response = await fetch("/set_weights", {{
+        method: "POST",
+        headers: {{
+          "Content-Type": "application/json"
+        }},
+        body: JSON.stringify({{
+          xgb_weight: xgb,
+          dnn_weight: 1 - xgb
+        }})
+      }});
+      const data = await response.json();
+      outputEl.textContent = JSON.stringify(data, null, 2);
+      if (!response.ok) {{
+        setStatus("Failed to update fusion weights.", "danger");
+        return;
+      }}
+      setStatus("Fusion weights updated.", "ok");
+    }}
 
     async function sendFile(endpoint) {{
       const file = fileInput.files[0];
       if (!file) {{
-        statusEl.textContent = "Choose a CSV file first.";
-        statusEl.className = "status danger";
+        setStatus("Choose a CSV file first.", "danger");
         return;
       }}
 
       const formData = new FormData();
       formData.append("file", file);
-      statusEl.textContent = "Running request...";
-      statusEl.className = "status";
+      setStatus("Running request...");
       outputEl.textContent = "";
 
       try {{
@@ -287,21 +608,32 @@ def root():
         }}
         outputEl.textContent = typeof parsed === "string" ? parsed : JSON.stringify(parsed, null, 2);
         if (!response.ok) {{
-          statusEl.textContent = "Request failed.";
-          statusEl.className = "status danger";
+          setStatus("Request failed.", "danger");
           return;
         }}
-        statusEl.textContent = "Request completed successfully.";
-        statusEl.className = "status ok";
+        applyDashboardData(parsed);
+        setStatus("Request completed successfully.", "ok");
       }} catch (error) {{
-        statusEl.textContent = "Network error while calling backend.";
-        statusEl.className = "status danger";
+        setStatus("Network error while calling backend.", "danger");
         outputEl.textContent = String(error);
       }}
     }}
 
+    fileInput.addEventListener("change", async () => {{
+      const file = fileInput.files[0];
+      if (!file) {{
+        renderPreview([]);
+        return;
+      }}
+      const text = await file.text();
+      renderPreview(parseCsv(text));
+      setStatus(`Loaded ${{file.name}}`);
+    }});
+    weightSlider.addEventListener("input", updateWeights);
+    document.getElementById("weightsBtn").addEventListener("click", applyWeights);
     document.getElementById("singleBtn").addEventListener("click", () => sendFile("/predict"));
     document.getElementById("batchBtn").addEventListener("click", () => sendFile("/batch_predict"));
+    updateWeights();
   </script>
 </body>
 </html>"""
@@ -319,6 +651,12 @@ def health():
 @app.get("/sample-csv")
 def sample_csv():
     sample_path = BASE_DIR / "Notebooks" / "sample_input.csv"
+    return PlainTextResponse(sample_path.read_text(encoding="utf-8"), media_type="text/csv")
+
+
+@app.get("/sample-csv-large")
+def sample_csv_large():
+    sample_path = BASE_DIR / "Notebooks" / "sample_input2.csv"
     return PlainTextResponse(sample_path.read_text(encoding="utf-8"), media_type="text/csv")
 
 
