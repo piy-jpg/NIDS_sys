@@ -604,7 +604,7 @@ def root():
         scrollWheelZoom: true,
       }}).setView([18, 10], 2);
 
-      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {{
+      L.tileLayer("https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png", {{
         maxZoom: 18,
         attribution: "&copy; OpenStreetMap contributors"
       }}).addTo(liveMap);
