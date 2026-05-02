@@ -2,5 +2,5 @@ NIDS_Hybrid_Presentation.pptx
 Notebooks/
 dashboard/
 Dockerfile
-models/dnn_model.h5
+models/
 test_model.py

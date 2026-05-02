@@ -1,13 +1,14 @@
 # api/app.py
 
-from fastapi import FastAPI, UploadFile, File
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel
-import pandas as pd
 import io
 import logging
 
-from src.hybrid_model import HybridNIDS
+import pandas as pd
+from fastapi import FastAPI, File, UploadFile
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+
+from src.lightweight_model import LightweightHybridNIDS
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -17,11 +18,13 @@ app = FastAPI(title="Hybrid NIDS API")
 # Initialize Model
 # ----------------------------
 try:
+    from src.hybrid_model import HybridNIDS
+
     model = HybridNIDS()
     logger.info("HybridNIDS initialized successfully.")
-except Exception as e:
-    logger.exception("Failed to initialize HybridNIDS.")
-    model = None
+except Exception:
+    logger.warning("Heavy HybridNIDS unavailable. Falling back to lightweight demo model.")
+    model = LightweightHybridNIDS()
 
 
 # ----------------------------
@@ -29,13 +32,18 @@ except Exception as e:
 # ----------------------------
 @app.get("/")
 def root():
-    return {"message": "Hybrid Network Intrusion Detection System API running."}
+    return {
+        "message": "Hybrid Network Intrusion Detection System API running.",
+        "mode": model.get_model_status()["modelo_mode"],
+        "docs": "/docs"
+    }
 
 
 @app.get("/health")
 def health():
     return {
-        "status": "ok" if model is not None else "model_not_loaded"
+        "status": "ok",
+        "mode": model.get_model_status()["modelo_mode"]
     }
 
 
