@@ -329,11 +329,13 @@ def root():
           <button class="secondary" id="weightsBtn">Apply Fusion Weights</button>
           <button class="primary" id="singleBtn">Run Single Prediction</button>
           <button class="secondary" id="batchBtn">Run Batch Prediction</button>
+          <button class="secondary" id="demoSingleBtn">Try Demo Single</button>
+          <button class="secondary" id="demoBatchBtn">Try Demo Batch</button>
           <a class="link-btn secondary" href="/sample-csv">Sample CSV</a>
           <a class="link-btn secondary" href="/sample-csv-large">Sample CSV 2</a>
           <a class="link-btn secondary" href="/health">Check Health</a>
         </div>
-        <div class="status" id="status">Ready for testing.</div>
+        <div class="status" id="status">Loading demo data...</div>
         <div class="banner" id="banner">High severity attack detected.</div>
       </div>
 
@@ -447,6 +449,7 @@ def root():
     const metricAttacks = document.getElementById("metricAttacks");
     const metricBenign = document.getElementById("metricBenign");
     const metricConfidence = document.getElementById("metricConfidence");
+    let currentCsvText = "";
 
     function updateWeights() {{
       const xgb = Number(weightSlider.value);
@@ -485,6 +488,10 @@ def root():
       const head = `<thead><tr>${{headers.map((h) => `<th>${{escapeHtml(h)}}</th>`).join("")}}</tr></thead>`;
       const bodyRows = rows.slice(0, 5).map((row) => `<tr>${{headers.map((h) => `<td>${{escapeHtml(row[h])}}</td>`).join("")}}</tr>`).join("");
       previewTable.innerHTML = head + `<tbody>${{bodyRows}}</tbody>`;
+    }}
+
+    function resetOutputPlaceholder() {{
+      outputEl.textContent = "Upload a CSV and run a test to see the JSON response here.";
     }}
 
     function setStatus(message, tone = "") {{
@@ -582,9 +589,45 @@ def root():
       setStatus("Fusion weights updated.", "ok");
     }}
 
+    async function sendTextAsFile(endpoint, csvText, filename) {{
+      const blob = new Blob([csvText], {{ type: "text/csv" }});
+      const formData = new FormData();
+      formData.append("file", blob, filename);
+      setStatus("Running request...");
+      outputEl.textContent = "";
+
+      try {{
+        const response = await fetch(endpoint, {{
+          method: "POST",
+          body: formData
+        }});
+        const text = await response.text();
+        let parsed;
+        try {{
+          parsed = JSON.parse(text);
+        }} catch {{
+          parsed = text;
+        }}
+        outputEl.textContent = typeof parsed === "string" ? parsed : JSON.stringify(parsed, null, 2);
+        if (!response.ok) {{
+          setStatus("Request failed.", "danger");
+          return;
+        }}
+        applyDashboardData(parsed);
+        setStatus("Request completed successfully.", "ok");
+      }} catch (error) {{
+        setStatus("Network error while calling backend.", "danger");
+        outputEl.textContent = String(error);
+      }}
+    }}
+
     async function sendFile(endpoint) {{
       const file = fileInput.files[0];
       if (!file) {{
+        if (currentCsvText) {{
+          await sendTextAsFile(endpoint, currentCsvText, "demo.csv");
+          return;
+        }}
         setStatus("Choose a CSV file first.", "danger");
         return;
       }}
@@ -626,6 +669,7 @@ def root():
         return;
       }}
       const text = await file.text();
+      currentCsvText = text;
       renderPreview(parseCsv(text));
       setStatus(`Loaded ${{file.name}}`);
     }});
@@ -633,7 +677,30 @@ def root():
     document.getElementById("weightsBtn").addEventListener("click", applyWeights);
     document.getElementById("singleBtn").addEventListener("click", () => sendFile("/predict"));
     document.getElementById("batchBtn").addEventListener("click", () => sendFile("/batch_predict"));
+    document.getElementById("demoSingleBtn").addEventListener("click", async () => {{
+      const text = await fetch("/sample-csv").then((r) => r.text());
+      currentCsvText = text;
+      renderPreview(parseCsv(text));
+      await sendTextAsFile("/predict", text, "sample_input.csv");
+    }});
+    document.getElementById("demoBatchBtn").addEventListener("click", async () => {{
+      const text = await fetch("/sample-csv-large").then((r) => r.text());
+      currentCsvText = text;
+      renderPreview(parseCsv(text));
+      await sendTextAsFile("/batch_predict", text, "sample_input2.csv");
+    }});
     updateWeights();
+    resetOutputPlaceholder();
+    window.addEventListener("load", async () => {{
+      try {{
+        const text = await fetch("/sample-csv-large").then((r) => r.text());
+        currentCsvText = text;
+        renderPreview(parseCsv(text));
+        await sendTextAsFile("/batch_predict", text, "sample_input2.csv");
+      }} catch (error) {{
+        setStatus("Demo preload failed. You can still upload a CSV.", "danger");
+      }}
+    }});
   </script>
 </body>
 </html>"""
