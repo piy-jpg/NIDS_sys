@@ -338,10 +338,10 @@ def root():
     }}
     .download-row {{
       display: flex;
-      justify-content: space-between;
+      justify-content: flex-end;
       align-items: center;
       gap: 12px;
-      margin-bottom: 14px;
+      margin-top: 14px;
     }}
     .muted {{
       color: var(--muted);
@@ -469,15 +469,15 @@ def root():
     </section>
 
     <section class="card" style="margin-top:20px">
-      <div class="download-row">
-        <h2 style="margin:0">Detailed Detection Results</h2>
-        <button class="secondary" id="downloadResultsBtn">Download Results CSV</button>
-      </div>
+      <h2>Detailed Detection Results</h2>
       <div class="table-wrap">
         <table id="resultsTable">
           <thead><tr><th>Prediction</th><th>Confidence</th><th>Severity</th><th>Warning</th></tr></thead>
           <tbody><tr><td colspan="4" class="muted">No predictions yet.</td></tr></tbody>
         </table>
+      </div>
+      <div class="download-row">
+        <button class="secondary" id="downloadResultsBtn">Download Results CSV</button>
       </div>
     </section>
 
