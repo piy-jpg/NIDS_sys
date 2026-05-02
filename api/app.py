@@ -290,6 +290,54 @@ def root():
       gap: 20px;
       grid-template-columns: 1fr 1fr;
     }}
+    .map-shell {{
+      position: relative;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 18px;
+      background:
+        radial-gradient(circle at 20% 30%, rgba(75, 208, 255, 0.14), transparent 22%),
+        radial-gradient(circle at 70% 60%, rgba(126, 255, 178, 0.12), transparent 20%),
+        linear-gradient(180deg, rgba(9, 21, 38, 0.98), rgba(6, 16, 28, 0.98));
+      min-height: 320px;
+    }}
+    .map-grid {{
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px);
+      background-size: 56px 56px;
+      opacity: 0.3;
+    }}
+    .map-svg {{
+      position: relative;
+      width: 100%;
+      height: 320px;
+      display: block;
+    }}
+    .map-legend {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 14px;
+      color: var(--muted);
+      font-size: 13px;
+    }}
+    .legend-dot {{
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      margin-right: 6px;
+    }}
+    .download-row {{
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 14px;
+    }}
     .muted {{
       color: var(--muted);
     }}
@@ -416,12 +464,30 @@ def root():
     </section>
 
     <section class="card" style="margin-top:20px">
-      <h2>Detailed Detection Results</h2>
+      <div class="download-row">
+        <h2 style="margin:0">Detailed Detection Results</h2>
+        <button class="secondary" id="downloadResultsBtn">Download Results CSV</button>
+      </div>
       <div class="table-wrap">
         <table id="resultsTable">
           <thead><tr><th>Prediction</th><th>Confidence</th><th>Severity</th><th>Warning</th></tr></thead>
           <tbody><tr><td colspan="4" class="muted">No predictions yet.</td></tr></tbody>
         </table>
+      </div>
+    </section>
+
+    <section class="card" style="margin-top:20px">
+      <h2>Detected Attack Regions</h2>
+      <div class="map-shell">
+        <div class="map-grid"></div>
+        <svg id="attackMap" class="map-svg" viewBox="0 0 1000 320" preserveAspectRatio="none" aria-label="Detected attacks region map">
+          <text x="50%" y="50%" text-anchor="middle" fill="#9fb3d1" font-size="20">Run a prediction to render attack regions.</text>
+        </svg>
+      </div>
+      <div class="map-legend">
+        <span><span class="legend-dot" style="background:#ff6d7a"></span>High severity</span>
+        <span><span class="legend-dot" style="background:#ffd166"></span>Medium/Low severity</span>
+        <span><span class="legend-dot" style="background:#7effb2"></span>Safe traffic</span>
       </div>
     </section>
 
@@ -445,11 +511,14 @@ def root():
     const attackBreakdown = document.getElementById("attackBreakdown");
     const threatFeed = document.getElementById("threatFeed");
     const resultsTable = document.getElementById("resultsTable");
+    const attackMap = document.getElementById("attackMap");
     const metricFlows = document.getElementById("metricFlows");
     const metricAttacks = document.getElementById("metricAttacks");
     const metricBenign = document.getElementById("metricBenign");
     const metricConfidence = document.getElementById("metricConfidence");
     let currentCsvText = "";
+    let currentRows = [];
+    let currentResults = [];
 
     function updateWeights() {{
       const xgb = Number(weightSlider.value);
@@ -480,6 +549,7 @@ def root():
     }}
 
     function renderPreview(rows) {{
+      currentRows = rows;
       if (!rows.length) {{
         previewTable.innerHTML = "<thead><tr><th>Preview</th></tr></thead><tbody><tr><td class='muted'>Upload a CSV to preview the first rows.</td></tr></tbody>";
         return;
@@ -499,8 +569,103 @@ def root():
       statusEl.className = tone ? `status ${{tone}}` : "status";
     }}
 
+    function hashString(value) {{
+      let hash = 0;
+      const text = String(value);
+      for (let i = 0; i < text.length; i += 1) {{
+        hash = ((hash << 5) - hash) + text.charCodeAt(i);
+        hash |= 0;
+      }}
+      return Math.abs(hash);
+    }}
+
+    function fakeGeo(value) {{
+      const seed = hashString(value);
+      const lat = ((seed % 120000) / 1000) - 60;
+      const lon = (((Math.floor(seed / 7)) % 360000) / 1000) - 180;
+      return {{ lat, lon }};
+    }}
+
+    function renderAttackMap(rows, results) {{
+      const activeResults = Array.isArray(results) ? results : [];
+      if (!activeResults.length) {{
+        attackMap.innerHTML = '<text x="50%" y="50%" text-anchor="middle" fill="#9fb3d1" font-size="20">Run a prediction to render attack regions.</text>';
+        return;
+      }}
+
+      const severityColor = {{
+        High: "#ff6d7a",
+        Medium: "#ffd166",
+        Low: "#ffd166",
+        Safe: "#7effb2",
+      }};
+
+      const points = activeResults.map((item, index) => {{
+        const row = rows[index] || rows[0] || {{}};
+        const regionKey = row.src_ip || row.Source_IP || row.Src_IP || row.Destination_IP || row.Dst_IP || `flow-${{index}}`;
+        const geo = fakeGeo(regionKey);
+        const x = ((geo.lon + 180) / 360) * 1000;
+        const y = ((90 - (geo.lat + 30)) / 180) * 320;
+        return {{
+          x: Math.max(24, Math.min(976, x)),
+          y: Math.max(24, Math.min(296, y)),
+          color: severityColor[item.severity] || "#7effb2",
+          label: item.prediction || "Unknown",
+          severity: item.severity || "Safe",
+        }};
+      }});
+
+      const circles = points.map((point) => `
+        <g>
+          <circle cx="${{point.x}}" cy="${{point.y}}" r="7" fill="${{point.color}}" fill-opacity="0.88" stroke="rgba(255,255,255,0.7)" stroke-width="1.5" />
+          <title>${{escapeHtml(point.label)}} | ${{escapeHtml(point.severity)}}</title>
+        </g>
+      `).join("");
+
+      attackMap.innerHTML = `
+        <defs>
+          <filter id="glow">
+            <feGaussianBlur stdDeviation="3.5" result="coloredBlur"></feGaussianBlur>
+            <feMerge>
+              <feMergeNode in="coloredBlur"></feMergeNode>
+              <feMergeNode in="SourceGraphic"></feMergeNode>
+            </feMerge>
+          </filter>
+        </defs>
+        <g opacity="0.18" fill="#7eb9ff">
+          <path d="M78,92 C124,56 200,40 271,57 C311,66 364,69 416,58 C469,47 553,47 605,72 C660,98 752,92 813,117 C872,141 928,189 916,226 C907,254 845,280 783,277 C727,274 678,240 617,230 C569,222 535,232 493,249 C443,270 364,284 295,271 C232,259 182,233 135,203 C93,176 56,129 78,92Z"></path>
+          <path d="M682,72 C724,53 780,52 823,68 C861,82 899,118 905,151 C909,176 895,205 869,218 C836,235 785,224 749,210 C714,197 680,179 664,148 C650,121 651,91 682,72Z"></path>
+          <path d="M217,224 C250,207 303,205 340,221 C372,236 387,267 364,286 C344,302 304,304 269,298 C233,292 191,273 186,248 C182,238 193,229 217,224Z"></path>
+        </g>
+        <g filter="url(#glow)">${{circles}}</g>
+      `;
+    }}
+
+    function downloadResultsCsv() {{
+      if (!currentResults.length) {{
+        setStatus("No results available to download yet.", "danger");
+        return;
+      }}
+      const headers = ["prediction", "confidence", "severity", "warning"];
+      const lines = [
+        headers.join(","),
+        ...currentResults.map((item) => headers.map((key) => `"${{String(item[key] ?? "").replaceAll('"', '""')}}"`).join(","))
+      ];
+      const blob = new Blob([lines.join("\\n")], {{ type: "text/csv;charset=utf-8;" }});
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "nids_results.csv";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      setStatus("Results CSV downloaded.", "ok");
+    }}
+
     function applyDashboardData(apiData) {{
       const results = Array.isArray(apiData.results) ? apiData.results : [apiData];
+      currentResults = results;
       const totalFlows = apiData.total_flows ?? results.length;
       const attackCount = results.filter((item) => item.prediction !== "Benign").length;
       const benignCount = results.filter((item) => item.prediction === "Benign").length;
@@ -565,6 +730,7 @@ def root():
         <thead><tr><th>Prediction</th><th>Confidence</th><th>Severity</th><th>Warning</th></tr></thead>
         <tbody>${{resultRows || "<tr><td colspan='4' class='muted'>No predictions yet.</td></tr>"}}</tbody>
       `;
+      renderAttackMap(currentRows, results);
     }}
 
     async function applyWeights() {{
@@ -677,6 +843,7 @@ def root():
     document.getElementById("weightsBtn").addEventListener("click", applyWeights);
     document.getElementById("singleBtn").addEventListener("click", () => sendFile("/predict"));
     document.getElementById("batchBtn").addEventListener("click", () => sendFile("/batch_predict"));
+    document.getElementById("downloadResultsBtn").addEventListener("click", downloadResultsCsv);
     document.getElementById("demoSingleBtn").addEventListener("click", async () => {{
       const text = await fetch("/sample-csv").then((r) => r.text());
       currentCsvText = text;
